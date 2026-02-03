@@ -1,0 +1,20 @@
+&CONTROL
+    calculation = 'scf'
+    prefix = 'aluminum'
+    pseudo_dir = './pseudo/'
+    outdir = './out/'
+/
+&SYSTEM
+    ibrav = 1, celldm(1) = 7.6, nat = 1, ntyp = 1,
+    ecutwfc = 30.0,
+    occupations = 'smearing', smearing = 'marzari-vanderbilt', degauss = 0.02
+/
+&ELECTRONS
+    conv_thr = 1.0d-8
+/
+ATOMIC_SPECIES
+    Al 26.98 Al.sample.UPF
+ATOMIC_POSITIONS (alat)
+    Al 0.00 0.00 0.00
+K_POINTS (automatic)
+    8 8 8 1 1 1
