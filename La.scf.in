@@ -1,0 +1,39 @@
+&CONTROL
+  calculation = 'scf',
+  outdir = './out/',
+  prefix = 'La',
+  pseudo_dir = './pseudopotentials',
+  restart_mode = 'from_scratch',
+  verbosity = 'high',
+/
+&SYSTEM
+  degauss = 0.02,
+  ecutrho = 200.0,
+  ecutwfc = 50.0,
+  occupations = 'smearing',
+  smearing = 'marzari-vanderbilt',
+  ibrav = 0,
+  nat = 4,
+  ntyp = 1,
+/
+&ELECTRONS
+  conv_thr = 1d-08,
+  mixing_beta = 0.7,
+/
+&IONS
+/
+&CELL
+/
+ATOMIC_SPECIES
+  La  138.9055 La.UPF
+ATOMIC_POSITIONS crystal
+  La -0.000000 0.000000 0.000000
+  La -0.000000 0.000000 0.500000
+  La 0.333333 0.666667 0.250000
+  La 0.666667 0.333333 0.750000
+K_POINTS automatic
+  4 4 4 1 1 1 0 0 0
+CELL_PARAMETERS angstrom
+  3.796311 -0.000000 0.000000
+  -1.898156 3.287703 0.000000
+  0.000000 0.000000 12.041258

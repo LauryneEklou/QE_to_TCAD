@@ -1,0 +1,37 @@
+&CONTROL
+  calculation = 'scf',
+  outdir = './out/',
+  prefix = 'Si',
+  pseudo_dir = './pseudopotentials',
+  restart_mode = 'from_scratch',
+  verbosity = 'high',
+/
+&SYSTEM
+  degauss = 0.02,
+  ecutrho = 200.0,
+  ecutwfc = 50.0,
+  occupations = 'smearing',
+  smearing = 'marzari-vanderbilt',
+  ibrav = 0,
+  nat = 2,
+  ntyp = 1,
+/
+&ELECTRONS
+  conv_thr = 1d-08,
+  mixing_beta = 0.7,
+/
+&IONS
+/
+&CELL
+/
+ATOMIC_SPECIES
+  Si  28.0855 Si.UPF
+ATOMIC_POSITIONS crystal
+  Si 0.875000 0.875000 0.875000
+  Si 0.125000 0.125000 0.125000
+K_POINTS automatic
+  4 4 4 1 1 1 0 0 0
+CELL_PARAMETERS angstrom
+  3.333573 0.000000 1.924639
+  1.111191 3.142924 1.924639
+  0.000000 0.000000 3.849278

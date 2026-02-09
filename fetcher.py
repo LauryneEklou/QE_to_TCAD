@@ -7,15 +7,17 @@ import requests
 from mp_api.client import MPRester
 from pymatgen.io.cif import CifWriter
 from pymatgen.io.vasp import Poscar
+from pymatgen.io.pwscf import PWInput
+from dotenv import load_dotenv
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 LOG = logging.getLogger("fetcher")
 
-# URLs for pseudo-potentials. We check multiple filename patterns.
+# UPDATED: Direct download URLs for pseudopotentials
 UPF_BASE_URLS = [
-    "https://raw.githubusercontent.com/dalcorso/pslibrary/master/upf/{}",
-    "https://www.quantum-espresso.org/upf_files/{}",
-    "https://raw.githubusercontent.com/pseudo-dojo/pseudo-dojo/main/pseudos/nc-sr-04_pbe_standard/{}"
+    "https://pseudopotentials.quantum-espresso.org/upf_files/{}", # Official QE repo
+    "https://raw.githubusercontent.com/pseudo-dojo/pseudo-dojo/main/pseudos/nc-sr-04_pbe_standard/{}", # PseudoDojo (check suffix)
+    "https://raw.githubusercontent.com/dalcorso/pslibrary/master/upf/{}"  # PSLibrary (GitHub)
 ]
 
 UPF_SUFFIXES = [
@@ -25,19 +27,22 @@ UPF_SUFFIXES = [
     ".pbe-n-rrkjus_psl.1.0.0.UPF",
     ".pbe-dn-kjpaw_psl.1.0.0.UPF", 
     ".pbe-dn-rrkjus_psl.1.0.0.UPF",
-    ".pbe-hgh.UPF",
+    ".pbe-dnl-kjpaw_psl.1.0.0.UPF",
     ".pbe-sp-van_ak.UPF",
+    ".pbe-hgh.UPF",
     "_oncv_psp8.upf"
 ]
 
-# Fallback dictionary for common elements (to guarantee success)
+# Fallback dictionary for common elements (using Official QE Repository)
 KNOWN_UPF_URLS = {
-    "Si": "https://raw.githubusercontent.com/dalcorso/pslibrary/master/upf/Si.pbe-n-rrkjus_psl.1.0.0.UPF",
-    "Ga": "https://raw.githubusercontent.com/dalcorso/pslibrary/master/upf/Ga.pbe-dn-kjpaw_psl.1.0.0.UPF",
-    "N":  "https://raw.githubusercontent.com/dalcorso/pslibrary/master/upf/N.pbe-n-kjpaw_psl.1.0.0.UPF",
-    "Al": "https://raw.githubusercontent.com/dalcorso/pslibrary/master/upf/Al.pbe-n-kjpaw_psl.1.0.0.UPF",
-    "C":  "https://raw.githubusercontent.com/dalcorso/pslibrary/master/upf/C.pbe-n-kjpaw_psl.1.0.0.UPF",
-    "O":  "https://raw.githubusercontent.com/dalcorso/pslibrary/master/upf/O.pbe-n-kjpaw_psl.1.0.0.UPF",
+    "Si": "https://pseudopotentials.quantum-espresso.org/upf_files/Si.pbe-n-rrkjus_psl.1.0.0.UPF",
+    "Ga": "https://pseudopotentials.quantum-espresso.org/upf_files/Ga.pbe-dn-kjpaw_psl.1.0.0.UPF",
+    "N":  "https://pseudopotentials.quantum-espresso.org/upf_files/N.pbe-n-kjpaw_psl.1.0.0.UPF",
+    "Al": "https://pseudopotentials.quantum-espresso.org/upf_files/Al.pbe-n-kjpaw_psl.1.0.0.UPF",
+    "C":  "https://pseudopotentials.quantum-espresso.org/upf_files/C.pbe-n-kjpaw_psl.1.0.0.UPF",
+    "O":  "https://pseudopotentials.quantum-espresso.org/upf_files/O.pbe-n-kjpaw_psl.1.0.0.UPF",
+    "Na": "https://pseudopotentials.quantum-espresso.org/upf_files/Na.pbe-sp-van_ak.UPF",
+    "Zn": "https://pseudopotentials.quantum-espresso.org/upf_files/Zn.pbe-dnl-kjpaw_psl.1.0.0.UPF",
 }
 
 def download_upf(element, output_dir):
@@ -119,6 +124,11 @@ def main():
 
     if not os.path.exists(args.out_dir):
         os.makedirs(args.out_dir)
+    
+    # Create pseudopotentials subdirectory
+    upf_dir = os.path.join(args.out_dir, "pseudopotentials")
+    if not os.path.exists(upf_dir):
+        os.makedirs(upf_dir)
 
     # 1. Fetch Structure
     structure = get_most_stable_structure(args.api_key, args.formula)
@@ -147,7 +157,72 @@ def main():
     LOG.info(f"Elements in structure: {elements}")
 
     for el in elements:
-        download_upf(el, args.out_dir)
+        download_upf(el, upf_dir)
+
+    # 4. Generate QE input file
+    qe_input_path = os.path.join(args.out_dir, f"{args.formula}.scf.in")
+    try:
+        LOG.info("Generating Quantum Espresso input file...")
+        
+        # Create pseudo dictionary from downloaded files
+        pseudo_dict = {}
+        for el in elements:
+            upf_file = None
+            # Look for the downloaded UPF file
+            for file in os.listdir(upf_dir):
+                if file.startswith(el) and file.endswith('.UPF'):
+                    upf_file = file
+                    break
+            if upf_file:
+                pseudo_dict[el] = upf_file
+            else:
+                LOG.warning(f"No UPF found for {el}, QE input generation may fail")
+        
+        # Set up control parameters
+        control = {
+            'calculation': 'scf',
+            'restart_mode': 'from_scratch',
+            'prefix': args.formula,
+            'pseudo_dir': './pseudopotentials',
+            'outdir': './out/',
+            'verbosity': 'high',
+        }
+        
+        # System parameters
+        system = {
+            'ecutwfc': 50.0,
+            'ecutrho': 200.0,
+            'occupations': 'smearing',
+            'smearing': 'marzari-vanderbilt',
+            'degauss': 0.02,
+        }
+        
+        # Electrons parameters
+        electrons = {
+            'conv_thr': 1.0e-8,
+            'mixing_beta': 0.7,
+        }
+        
+        # Create PWInput
+        pw_input = PWInput(
+            structure=structure,
+            pseudo=pseudo_dict,
+            control=control,
+            system=system,
+            electrons=electrons,
+            kpoints_mode='automatic',
+            kpoints_grid=(4, 4, 4, 1, 1, 1),
+        )
+        
+        # Write to file
+        pw_input.write_file(qe_input_path)
+        LOG.info(f"QE input file saved to {qe_input_path}")
+        
+    except Exception as e:
+        LOG.error(f"Failed to generate QE input file: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()
+

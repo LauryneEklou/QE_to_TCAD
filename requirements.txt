@@ -1,4 +1,4 @@
 pymatgen
 requests
 mp-api
-
+python-dotenv
