@@ -2,3 +2,4 @@ pymatgen
 requests
 mp-api
 python-dotenv
+optimade-python-client

@@ -1,0 +1,42 @@
+&CONTROL
+  calculation = 'scf',
+  outdir = './out/',
+  prefix = 'TiO2',
+  pseudo_dir = './pseudopotentials',
+  restart_mode = 'from_scratch',
+  verbosity = 'high',
+/
+&SYSTEM
+  degauss = 0.02,
+  ecutrho = 200.0,
+  ecutwfc = 50.0,
+  occupations = 'smearing',
+  smearing = 'marzari-vanderbilt',
+  ibrav = 0,
+  nat = 6,
+  ntyp = 2,
+/
+&ELECTRONS
+  conv_thr = 1d-08,
+  mixing_beta = 0.7,
+/
+&IONS
+/
+&CELL
+/
+ATOMIC_SPECIES
+  O  15.9994 O.UPF
+  Ti  47.8670 Ti.UPF
+ATOMIC_POSITIONS crystal
+  Ti 0.875000 0.625000 0.250000
+  Ti 0.125000 0.375000 0.750000
+  O 0.332153 0.582153 0.164304
+  O 0.082153 0.832153 0.664304
+  O 0.917847 0.167847 0.335696
+  O 0.667847 0.417847 0.835696
+K_POINTS automatic
+  4 4 4 1 1 1 0 0 0
+CELL_PARAMETERS angstrom
+  3.547716 0.000000 -1.311989
+  -0.485188 3.514383 -1.311989
+  0.018025 0.020683 5.501383

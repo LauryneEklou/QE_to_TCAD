@@ -5,6 +5,7 @@ import argparse
 import logging
 import requests
 from mp_api.client import MPRester
+from pymatgen.core import Lattice, Structure
 from pymatgen.io.cif import CifWriter
 from pymatgen.io.vasp import Poscar
 from pymatgen.io.pwscf import PWInput
@@ -12,6 +13,8 @@ from dotenv import load_dotenv
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 LOG = logging.getLogger("fetcher")
+
+OPTIMADE_MATERIALS_CLOUD_URL = "https://optimade.materialscloud.org/mc3d"
 
 # UPDATED: Direct download URLs for pseudopotentials
 UPF_BASE_URLS = [
@@ -84,6 +87,74 @@ def download_upf(element, output_dir):
     LOG.error(f"Could not download UPF for element {element} from any checked source. Please download it manually.")
     return None
 
+def _optimade_entry_to_structure(entry):
+    attributes = entry.get("attributes", {})
+    lattice_vectors = attributes.get("lattice_vectors")
+    cart_positions = attributes.get("cartesian_site_positions")
+    frac_positions = attributes.get("fractional_site_positions")
+    species_at_sites = attributes.get("species_at_sites")
+    species_list = {sp.get("name"): sp for sp in attributes.get("species", [])}
+
+    if not lattice_vectors or not species_at_sites:
+        raise ValueError("OPTIMADE entry missing lattice vectors or species at sites")
+
+    lattice = Lattice(lattice_vectors)
+    if cart_positions:
+        coords = cart_positions
+        coords_are_cartesian = True
+    elif frac_positions:
+        coords = frac_positions
+        coords_are_cartesian = False
+    else:
+        raise ValueError("OPTIMADE entry missing site positions")
+
+    site_species = []
+    for site_name in species_at_sites:
+        species = species_list.get(site_name)
+        if not species:
+            raise ValueError(f"OPTIMADE species definition missing for {site_name}")
+        symbols = species.get("chemical_symbols", [])
+        concentrations = species.get("concentration", [])
+
+        if len(symbols) == 1:
+            site_species.append(symbols[0])
+            continue
+
+        occupancy = {}
+        for symbol, occ in zip(symbols, concentrations):
+            if symbol == "X" or occ <= 0:
+                continue
+            occupancy[symbol] = occ
+        if not occupancy:
+            raise ValueError(f"Invalid occupancy for OPTIMADE species {site_name}")
+        site_species.append(occupancy)
+
+    return Structure(lattice, site_species, coords, coords_are_cartesian=coords_are_cartesian)
+
+
+def _get_structure_from_optimade(formula):
+    try:
+        optimade_filter = f"chemical_formula_reduced=\"{formula}\""
+        url = f"{OPTIMADE_MATERIALS_CLOUD_URL}/structures"
+        response = requests.get(url, params={"filter": optimade_filter, "page_limit": 20}, timeout=10)
+        response.raise_for_status()
+        payload = response.json()
+        data = payload.get("data", [])
+
+        if not data:
+            LOG.error(f"No OPTIMADE structures found for formula {formula}")
+            return None
+
+        entry = data[0]
+        structure = _optimade_entry_to_structure(entry)
+        entry_id = entry.get("id", "unknown")
+        LOG.info(f"OPTIMADE fallback selected structure {entry_id}")
+        return structure
+    except Exception as e:
+        LOG.error(f"Error communicating with OPTIMADE (Materials Cloud): {e}")
+        return None
+
+
 def get_most_stable_structure(api_key, formula):
     """Fetches the most stable structure for a given formula."""
     try:
@@ -92,21 +163,21 @@ def get_most_stable_structure(api_key, formula):
             # UPDATED: Use mpr.materials.summary and correct field energy_above_hull
             docs = mpr.materials.summary.search(formula=formula, fields=["material_id", "structure", "energy_above_hull", "is_stable"])
 
-            if not docs:
-                LOG.error(f"No materials found for formula {formula}")
-                return None
+            if docs:
+                # Sort by energy above hull (stability)
+                # We want the one closest to 0 (stable)
+                sorted_docs = sorted(docs, key=lambda x: x.energy_above_hull)
+                best_doc = sorted_docs[0]
 
-            # Sort by energy above hull (stability)
-            # We want the one closest to 0 (stable)
-            sorted_docs = sorted(docs, key=lambda x: x.energy_above_hull)
-            best_doc = sorted_docs[0]
+                LOG.info(f"Found {len(docs)} structures. Selected most stable: {best_doc.material_id} (energy_above_hull={best_doc.energy_above_hull})")
+                return best_doc.structure
 
-            LOG.info(f"Found {len(docs)} structures. Selected most stable: {best_doc.material_id} (energy_above_hull={best_doc.energy_above_hull})")
-            return best_doc.structure
+            LOG.warning(f"No Materials Project structures found for formula {formula}. Falling back to OPTIMADE.")
 
     except Exception as e:
         LOG.error(f"Error communicating with Materials Project: {e}")
-        return None
+
+    return _get_structure_from_optimade(formula)
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch structure and pseudopotentials for a chemical formula.")
