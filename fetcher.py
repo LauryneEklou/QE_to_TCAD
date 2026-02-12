@@ -4,6 +4,7 @@ import sys
 import argparse
 import logging
 import requests
+import subprocess
 from mp_api.client import MPRester
 from pymatgen.core import Lattice, Structure
 from pymatgen.io.cif import CifWriter
@@ -14,7 +15,41 @@ from dotenv import load_dotenv
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 LOG = logging.getLogger("fetcher")
 
-OPTIMADE_MATERIALS_CLOUD_URL = "https://optimade.materialscloud.org/mc3d"
+LOCAL_PW_PATH = os.path.join(os.path.dirname(__file__), "third_party", "q-e-qe-7.0", "bin", "pw.x")
+
+
+def _is_offline_error(exc):
+    message = str(exc).lower()
+    offline_signals = [
+        "temporary failure in name resolution",
+        "name or service not known",
+        "failed to resolve",
+        "nodename nor servname provided",
+        "getaddrinfo failed",
+        "connection refused",
+        "network is unreachable",
+        "no route to host",
+    ]
+    if any(signal in message for signal in offline_signals):
+        return True
+    if isinstance(exc, requests.exceptions.RequestException):
+        return True
+    return False
+
+
+def _default_pw_path():
+    env_pw = os.environ.get("QE_PW")
+    if env_pw:
+        return env_pw
+    if os.path.exists(LOCAL_PW_PATH):
+        return LOCAL_PW_PATH
+    return "pw.x"
+
+OPTIMADE_MATERIALS_CLOUD_URLS = [
+    "https://optimade.materialscloud.org/mc3d/optimade/v1",
+    "https://optimade.materialscloud.org/mc3d",
+    "https://optimade.materialscloud.org/optimade/v1",
+]
 
 # UPDATED: Direct download URLs for pseudopotentials
 UPF_BASE_URLS = [
@@ -135,14 +170,30 @@ def _optimade_entry_to_structure(entry):
 def _get_structure_from_optimade(formula):
     try:
         optimade_filter = f"chemical_formula_reduced=\"{formula}\""
-        url = f"{OPTIMADE_MATERIALS_CLOUD_URL}/structures"
-        response = requests.get(url, params={"filter": optimade_filter, "page_limit": 20}, timeout=10)
-        response.raise_for_status()
-        payload = response.json()
-        data = payload.get("data", [])
+        data = []
+        last_error = None
+
+        for base_url in OPTIMADE_MATERIALS_CLOUD_URLS:
+            url = f"{base_url.rstrip('/')}/structures"
+            try:
+                response = requests.get(url, params={"filter": optimade_filter, "page_limit": 20}, timeout=10)
+                response.raise_for_status()
+                payload = response.json()
+                data = payload.get("data", [])
+                if data:
+                    break
+            except Exception as exc:
+                last_error = exc
+                continue
 
         if not data:
-            LOG.error(f"No OPTIMADE structures found for formula {formula}")
+            if last_error:
+                offline_hint = " (offline/connexion)" if _is_offline_error(last_error) else ""
+                LOG.error(
+                    f"No OPTIMADE structures found for formula {formula}. Last error{offline_hint}: {last_error}"
+                )
+            else:
+                LOG.error(f"No OPTIMADE structures found for formula {formula}")
             return None
 
         entry = data[0]
@@ -151,8 +202,35 @@ def _get_structure_from_optimade(formula):
         LOG.info(f"OPTIMADE fallback selected structure {entry_id}")
         return structure
     except Exception as e:
-        LOG.error(f"Error communicating with OPTIMADE (Materials Cloud): {e}")
+        offline_hint = " (offline/connexion)" if _is_offline_error(e) else ""
+        LOG.error(f"Error communicating with OPTIMADE (Materials Cloud){offline_hint}: {e}")
         return None
+
+
+def _run_qe_with_runner(input_path, pw_exec, timeout, out_dir, out_name):
+    runner_path = os.path.join(os.path.dirname(__file__), "qe_runner.py")
+    if not os.path.exists(runner_path):
+        LOG.error("qe_runner.py not found at %s", runner_path)
+        return 1
+
+    cmd = [
+        sys.executable,
+        runner_path,
+        str(input_path),
+        "--run_dir",
+        out_dir,
+        "--out",
+        out_name,
+        "--no_timestamp",
+    ]
+    if pw_exec:
+        cmd.extend(["--pw", pw_exec])
+    if timeout:
+        cmd.extend(["--timeout", str(timeout)])
+
+    LOG.info("Running: %s", " ".join(cmd))
+    result = subprocess.run(cmd, check=False)
+    return result.returncode
 
 
 def get_most_stable_structure(api_key, formula):
@@ -175,7 +253,8 @@ def get_most_stable_structure(api_key, formula):
             LOG.warning(f"No Materials Project structures found for formula {formula}. Falling back to OPTIMADE.")
 
     except Exception as e:
-        LOG.error(f"Error communicating with Materials Project: {e}")
+        offline_hint = " (offline/connexion)" if _is_offline_error(e) else ""
+        LOG.error(f"Error communicating with Materials Project{offline_hint}: {e}")
 
     return _get_structure_from_optimade(formula)
 
@@ -186,6 +265,9 @@ def main():
     default_key = os.environ.get("MP_API_KEY", "GBCjLUpcDdcfYKnksM5lF4yVIqD5dtF7")
     parser.add_argument("--api_key", type=str, default=default_key, help="Materials Project API Key")
     parser.add_argument("--out_dir", type=str, default=".", help="Output directory")
+    parser.add_argument("--pw", type=str, default=_default_pw_path(), help="pw.x executable or path")
+    parser.add_argument("--timeout", type=int, default=None, help="Timeout in seconds for pw.x")
+    parser.add_argument("--skip_qe", action="store_true", help="Skip running Quantum Espresso")
 
     args = parser.parse_args()
 
@@ -231,12 +313,16 @@ def main():
         download_upf(el, upf_dir)
 
     # 4. Generate QE input file
-    qe_input_path = os.path.join(args.out_dir, f"{args.formula}.scf.in")
+    inputs_dir = os.path.join(args.out_dir, "generated_inputs")
+    if not os.path.exists(inputs_dir):
+        os.makedirs(inputs_dir)
+    qe_input_path = os.path.join(inputs_dir, f"{args.formula}.scf.in")
     try:
         LOG.info("Generating Quantum Espresso input file...")
         
         # Create pseudo dictionary from downloaded files
         pseudo_dict = {}
+        missing_pseudos = []
         for el in elements:
             upf_file = None
             # Look for the downloaded UPF file
@@ -247,15 +333,20 @@ def main():
             if upf_file:
                 pseudo_dict[el] = upf_file
             else:
-                LOG.warning(f"No UPF found for {el}, QE input generation may fail")
+                missing_pseudos.append(el)
+
+        if missing_pseudos:
+            LOG.error(f"Missing UPF files for: {', '.join(missing_pseudos)}")
+            LOG.error("Download the missing pseudopotentials and rerun.")
+            sys.exit(1)
         
         # Set up control parameters
         control = {
             'calculation': 'scf',
             'restart_mode': 'from_scratch',
             'prefix': args.formula,
-            'pseudo_dir': './pseudopotentials',
-            'outdir': './out/',
+            'pseudo_dir': os.path.abspath(upf_dir),
+            'outdir': os.path.abspath(os.path.join(args.out_dir, 'out')),
             'verbosity': 'high',
         }
         
@@ -293,6 +384,22 @@ def main():
         LOG.error(f"Failed to generate QE input file: {e}")
         import traceback
         traceback.print_exc()
+        sys.exit(1)
+
+    if args.skip_qe:
+        return
+
+    qe_out_dir = os.path.join(args.out_dir, "out")
+    exit_code = _run_qe_with_runner(
+        input_path=qe_input_path,
+        pw_exec=args.pw,
+        timeout=args.timeout,
+        out_dir=qe_out_dir,
+        out_name=f"{args.formula}.out",
+    )
+
+    if exit_code != 0:
+        sys.exit(exit_code)
 
 if __name__ == "__main__":
     main()

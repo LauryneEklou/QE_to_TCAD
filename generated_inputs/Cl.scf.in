@@ -1,0 +1,39 @@
+&CONTROL
+  calculation = 'scf',
+  outdir = '/home/lauryne/QE_to_TCAD/out',
+  prefix = 'Cl',
+  pseudo_dir = '/home/lauryne/QE_to_TCAD/pseudopotentials',
+  restart_mode = 'from_scratch',
+  verbosity = 'high',
+/
+&SYSTEM
+  degauss = 0.02,
+  ecutrho = 200.0,
+  ecutwfc = 50.0,
+  occupations = 'smearing',
+  smearing = 'marzari-vanderbilt',
+  ibrav = 0,
+  nat = 4,
+  ntyp = 1,
+/
+&ELECTRONS
+  conv_thr = 1d-08,
+  mixing_beta = 0.7,
+/
+&IONS
+/
+&CELL
+/
+ATOMIC_SPECIES
+  Cl  35.4530 Cl.UPF
+ATOMIC_POSITIONS crystal
+  Cl 0.885475 0.000000 0.395247
+  Cl 0.114525 -0.000000 0.604753
+  Cl 0.614525 -0.000000 0.895247
+  Cl 0.385475 0.000000 0.104753
+K_POINTS automatic
+  4 4 4 1 1 1 0 0 0
+CELL_PARAMETERS angstrom
+  0.000000 -4.114944 -0.000000
+  -3.264206 2.057470 0.000000
+  -0.000000 0.000000 -8.402395

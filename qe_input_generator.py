@@ -30,8 +30,7 @@ def find_pseudopotential(element, pseudo_dir="./pseudopotentials"):
     if not pseudo_path.exists():
         LOG.warning(f"Pseudopotential directory {pseudo_dir} does not exist")
         return None
-    
-    # Look for files matching the element
+
     # Pattern: Element.*.UPF or Element.UPF
     patterns = [
         f"{element}.UPF",
@@ -56,7 +55,7 @@ def get_atomic_mass(element):
     return Element(element).atomic_mass
 
 
-def generate_qe_input(structure_file, output_file="pwscf.in", 
+def generate_qe_input(structure_file, output_file="generated_inputs/pwscf.in", 
                       calculation_type="scf", pseudo_dir="./pseudopotentials",
                       ecutwfc=50.0, ecutrho=None, k_points=(4, 4, 4)):
     """
@@ -108,8 +107,8 @@ def generate_qe_input(structure_file, output_file="pwscf.in",
         'calculation': calculation_type,
         'restart_mode': 'from_scratch',
         'prefix': structure.composition.reduced_formula,
-        'pseudo_dir': pseudo_dir,
-        'outdir': './out/',
+        'pseudo_dir': str(Path(pseudo_dir).resolve()),
+        'outdir': str((Path.cwd() / 'out').resolve()),
         'verbosity': 'high',
     }
     
@@ -165,7 +164,9 @@ def generate_qe_input(structure_file, output_file="pwscf.in",
         )
         
         # Write to file
-        pw_input.write_file(output_file)
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        pw_input.write_file(str(output_path))
         LOG.info(f"Successfully generated QE input file: {output_file}")
         
         # Display summary
@@ -199,8 +200,8 @@ Examples:
     
     parser.add_argument("structure", type=str, 
                        help="Input structure file (CIF, POSCAR, etc.)")
-    parser.add_argument("-o", "--output", type=str, default="pwscf.in",
-                       help="Output .in file (default: pwscf.in)")
+    parser.add_argument("-o", "--output", type=str, default="generated_inputs/pwscf.in",
+                       help="Output .in file (default: generated_inputs/pwscf.in)")
     parser.add_argument("-t", "--type", type=str, default="scf",
                        choices=['scf', 'relax', 'vc-relax', 'nscf'],
                        help="Calculation type (default: scf)")

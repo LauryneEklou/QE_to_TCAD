@@ -1,0 +1,39 @@
+&CONTROL
+  calculation = 'scf',
+  outdir = '/home/lauryne/QE_to_TCAD/out',
+  prefix = 'Be',
+  pseudo_dir = '/home/lauryne/QE_to_TCAD/pseudopotentials',
+  restart_mode = 'from_scratch',
+  verbosity = 'high',
+/
+&SYSTEM
+  degauss = 0.02,
+  ecutrho = 200.0,
+  ecutwfc = 50.0,
+  occupations = 'smearing',
+  smearing = 'marzari-vanderbilt',
+  ibrav = 0,
+  nat = 4,
+  ntyp = 1,
+/
+&ELECTRONS
+  conv_thr = 1d-08,
+  mixing_beta = 0.7,
+/
+&IONS
+/
+&CELL
+/
+ATOMIC_SPECIES
+  Be  9.0122 Be.UPF
+ATOMIC_POSITIONS crystal
+  Be 0.750008 0.333048 0.249822
+  Be 0.249992 0.666952 0.249822
+  Be 0.250008 0.166952 0.750178
+  Be 0.749992 0.833048 0.750178
+K_POINTS automatic
+  4 4 4 1 1 1 0 0 0
+CELL_PARAMETERS angstrom
+  3.574102 0.000000 0.000000
+  0.000000 3.920013 0.000000
+  0.000000 0.000000 2.269463

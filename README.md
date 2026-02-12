@@ -16,6 +16,11 @@ Pipeline automatisé pour convertir des structures cristallines en fichiers d'en
 - Liaison automatique des pseudopotentiels
 - Support de différents types de calculs (scf, relax, vc-relax, nscf)
 
+### ✅ Étape 3 : Exécution des calculs QE (pw.x)
+- Lancement de `pw.x` via subprocess
+- Gestion des logs (.out/.err) et timeouts
+- Détection simple d'erreurs dans la sortie
+
 ## Installation
 
 ```bash
@@ -53,6 +58,20 @@ python fetcher.py Al
 - `POSCAR` - Structure au format VASP
 - `pseudopotentials/*.UPF` - Pseudopotentiels téléchargés
 - `{formule}.scf.in` - Fichier d'entrée Quantum Espresso prêt à l'emploi
+
+### Lancer un calcul Quantum Espresso (pw.x)
+
+```bash
+source .venv/bin/activate
+
+# Exemple simple
+python qe_runner.py generated_inputs/Si.scf.in
+
+# Exemple MPI + timeout (en secondes)
+python qe_runner.py generated_inputs/Si.scf.in --mpi mpirun -np 4 --timeout 7200
+```
+
+Les sorties sont écrites dans `qe_runs/` avec des fichiers `.out` et `.err`.
 
 ### Générateur d'input QE autonome
 
@@ -113,6 +132,7 @@ python qe_input_generator.py structure.cif -t relax -e 60 -k 8 8 8 -o relax.in
 QE_to_TCAD/
 ├── fetcher.py                 # Script principal (structure + UPF + .in)
 ├── qe_input_generator.py      # Générateur .in autonome
+├── qe_runner.py               # Lancement des calculs QE (pw.x)
 ├── requirements.txt           # Dépendances Python
 ├── .env                       # Configuration API
 ├── pseudopotentials/          # Pseudopotentiels UPF
@@ -147,7 +167,6 @@ QE_to_TCAD/
 
 ## Prochaines étapes
 
-- [ ] Étape 3 : Exécution des calculs QE
 - [ ] Étape 4 : Post-traitement et visualisation
 - [ ] Étape 5 : Conversion vers TCAD
 
